@@ -30,7 +30,7 @@ Nombre de la "startup": RiskVision   Repositorio (público): https://github.com/
 - **¿Una misma entidad (cliente, paciente, empresa) aparece en varias filas?** ☒ no  ☐ sí → la partición
   será por: fila (cada fila es un cliente distinto; `ID` no se repite), estratificada por la variable objetivo: 80 % entrenamiento (24.000 filas) y 20 % prueba (6.000 filas), con semilla 42 y validación cruzada de 5 folds estratificados.
 - **Datos personales o confidenciales presentes:** ☐ no  ☒ sí → se eliminarán/anonimizarán así: no hay nombres ni documentos, solo un `ID` anónimo. `SEX`, `AGE` y `MARRIAGE` son atributos sensibles: se revisará su efecto y no se usarán para decidir a quién se le niega crédito. `ID` se excluye del modelo.
-- **Licencia o permiso de uso de los datos:** Datos públicos del repositorio UCI. Verificar la licencia indicada en la página del dataset antes de la entrega final.
+- **Licencia o permiso de uso de los datos:** CC BY 4.0 (verificada el 2026-10-30 en la página oficial de UCI). Permite usar y redistribuir citando la fuente: Yeh, I. (2009). Default of Credit Card Clients [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C55S3H
 
 ## 4. Métrica
 

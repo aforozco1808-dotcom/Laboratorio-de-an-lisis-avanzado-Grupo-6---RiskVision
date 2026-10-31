@@ -36,6 +36,11 @@ Nació de la rama `feature/estudiantes` del repositorio del curso (ver `LEEME-PR
 `git clone --branch feature/estudiantes --single-branch …`, la apuntó a este repo con `git remote set-url origin …` y hizo `push`. Los demás integrantes
 clonan **este** repositorio. Para arrancar, sigue `material-del-curso/guias/montaje-proyecto.md`.
 
+## Datos
+Dataset *Default of Credit Card Clients* (30.000 clientes de un banco de Taiwán), licencia **CC BY 4.0**.
+Cita: Yeh, I. (2009). Default of Credit Card Clients [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C55S3H
+El archivo `.xls` va en `data/raw/` (esa carpeta no se sube a GitHub).
+
 ## Equipo
 | Integrante | Rol |
 |---|---|

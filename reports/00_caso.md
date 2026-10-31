@@ -4,7 +4,7 @@
 
 - **case_id:** riskvision
 - **business_question:** El área de riesgo de crédito de un banco decide qué clientes de tarjeta de crédito reciben seguimiento preventivo, un ajuste de límite o una oferta de reestructuración. Con el historial de pagos de los últimos 6 meses, los montos facturados y pagados, el límite y datos demográficos, el modelo ordena a los clientes según su probabilidad de no pagar el próximo mes. El modelo prioriza; la decisión final la toma una persona.
-- **dataset_source:** Default of Credit Card Clients, UCI Machine Learning Repository (clientes de un banco de Taiwán, abril a septiembre de 2005). Licencia: por verificar en la página de UCI.
+- **dataset_source:** Default of Credit Card Clients, UCI Machine Learning Repository (clientes de un banco de Taiwán, abril a septiembre de 2005). Licencia: CC BY 4.0 (verificada en UCI el 2026-10-30). Cita: Yeh, I. (2009). Default of Credit Card Clients [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C55S3H
 - **dataset_rows:** 30.000 (el criterio del curso pide mínimo 50.000: por confirmar con el instructor)
 - **dataset_columns:** 25 (24 variables más `ID`)
 - **target:** `default payment next month` (1 = incumple, 0 = paga; 22,12 % incumple)
