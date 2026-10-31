@@ -17,7 +17,10 @@
 - `EDUCATION` tiene códigos sin documentar: 0 (14), 5 (280) y 6 (51), un total de 345 clientes (1,15 %). `MARRIAGE` tiene el código 0 en 54 clientes.
 - `PAY_*` mezcla estados (-2, -1, 0) con meses de atraso (1 a 8); no existe `PAY_1` (se salta de `PAY_0` a `PAY_2`).
 - 1.930 clientes (6,43 %) tienen algún `BILL_AMT` negativo; hay colas largas en `PAY_AMT*` (en `PAY_AMT2`, percentil 99 = 76.651 y máximo = 1.684.259).
+- Las 6 facturas mensuales están muy correlacionadas entre sí (0,89 en promedio).
 - 3.931 clientes facturan por encima de su límite en algún mes y 795 no tienen movimiento en 6 meses (plausibles).
+- Línea base de negocio: la regla «marcar si `PAY_0` ≥ 2» marca al 10,4 %, tiene recall 32,8 % y precision 69,6 %, y su costo (5 a 1) es 0,775.
+- Línea base de equidad (misma regla): recall 32,7 % en hombres y 32,9 % en mujeres; entre 30 % y 35 % según la edad.
 - Sin datos personales (solo un `ID` anónimo). `SEX`, `AGE` y `MARRIAGE` son atributos sensibles.
 
 ## Sospechas de fuga de información
@@ -38,9 +41,15 @@
 | 6 | Mujeres incumplen 20,8 % y hombres 24,2 %; `AGE` y `MARRIAGE` también separan grupos | Revisar errores por grupo y probar con y sin `SEX` | Atributos sensibles: el modelo no debe discriminar |
 | 7 | `PAY_0` es la más correlacionada con el objetivo (0,33) | Medir el modelo con y sin `PAY_0` | Que no dependa de una sola columna |
 | 8 | 35 filas idénticas ignorando `ID`; 3.931 clientes facturan por encima del límite | No borrar filas | Parecen clientes reales distintos |
+| 9 | `n_atraso` (meses con atraso) tiene correlación 0,40 con el objetivo, mayor que `PAY_0` (0,33); va de 11,7 % a 70,3 % | Crear `n_atraso` en la etapa de variables | Resume el historial de 6 meses en un número |
+| 10 | Las 6 facturas `BILL_AMT` tienen correlación media 0,89; `ratio_pago` (−0,01) y `tendencia` (−0,03) casi no se relacionan con el objetivo | Resumir o regularizar las facturas; probar las nuevas sin esperar grandes mejoras | Redundancia confunde a la logística; sin señal lineal en las nuevas |
+| 11 | La regla `PAY_0 >= 2` cuesta 0,775 (≈ «marcar a todos» 0,779); el modelo de referencia, 0,57 | Seguir con un modelo | El modelo ahorra cerca de un 27 % de costo sobre la mejor estrategia sin modelo |
+| 12 | LightGBM 0,7813 y HistGradientBoosting 0,7806 empatan; XGBoost por defecto 0,7668; regresión logística 0,7272 | Gradient boosting como principal y regresión logística como contraste explicable | Mejor ROC AUC; la logística permite explicar |
+| 13 | Calibración buena (predicho 0,568 frente a real 0,567 en el quintil más alto) | Usar probabilidades para el umbral de costos; confirmar con el modelo final | El umbral depende de que «30 %» signifique 30 % |
+| 14 | De 14.400 a 19.200 filas el ROC AUC sube solo 0,0009 | Invertir en variables, no en más datos | La curva ya se aplanó |
 
 ## Qué queda abierto
 
-- Si el instructor acepta un dataset de 30.000 filas (el curso pide mínimo 50.000).
 - La proporción de costos 5 a 1 es un supuesto por validar; de ella depende el umbral.
+- La comparación oficial de modelos (con optimización de cada candidato) se hace en `05_torneo.ipynb`.
 - Medir el modelo con y sin `PAY_0` y con y sin `SEX` (etapa 4).
