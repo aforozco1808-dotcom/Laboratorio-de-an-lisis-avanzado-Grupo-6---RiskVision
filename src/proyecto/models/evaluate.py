@@ -14,12 +14,22 @@ from sklearn.model_selection import RepeatedStratifiedKFold
 from proyecto.config import RANDOM_STATE
 
 FN_WEIGHT = 5            # hipótesis del grupo: no detectar a quien incumple pesa 5 veces una falsa alarma
-THEORETICAL_THRESHOLD = 1 / 6   # = 1 / (1 + 5); en la igualdad se marca al cliente
+
+
+def theoretical_threshold(fn_weight: float) -> float:
+    """Umbral de indiferencia de la matriz [[0, 1], [fn_weight, 0]]: 1 / (1 + fn_weight). Solo vale con probabilidades calibradas."""
+    return 1 / (1 + fn_weight)
+
+
+THEORETICAL_THRESHOLD = theoretical_threshold(FN_WEIGHT)   # 1/6 con 5 a 1; en la igualdad se marca al cliente
 
 
 def relative_penalty(y_true, proba, threshold: float = THEORETICAL_THRESHOLD, fn_weight: float = FN_WEIGHT) -> float:
-    """Penalización media por cliente: (fn_weight × falsos negativos + falsos positivos) / clientes."""
-    y_true, flagged = np.asarray(y_true), np.asarray(proba) >= threshold
+    """Penalización media por cliente: (fn_weight × falsos negativos + falsos positivos) / clientes.
+
+    Es la ÚNICA cuenta de penalización del proyecto: se marca al cliente si proba ≥ threshold.
+    """
+    y_true, flagged = np.asarray(y_true), np.asarray(proba, dtype=float) >= threshold
     fn = int(((~flagged) & (y_true == 1)).sum())
     fp = int((flagged & (y_true == 0)).sum())
     return (fn_weight * fn + fp) / len(y_true)
@@ -84,24 +94,24 @@ def decide(per_model: dict, min_ratio: float = 1.0, min_share: float = 0.8, key:
 
 
 REVIEW_SHARE = 0.20   # capacidad supuesta de revisión: el 20 % de clientes con más riesgo (escenario del EDA, no una medición)
-COST_RATIOS = (2, 5, 10)   # escenarios de sensibilidad: cuántas veces pesa no detectar a quien incumple frente a una falsa alarma
-
-
-def _penalty(y_true, proba, fn_weight: float, threshold: float | None = None) -> float:
-    """Penalización media por cliente con umbral `threshold` (por defecto el teórico 1 / (1 + fn_weight))."""
-    threshold = 1 / (1 + fn_weight) if threshold is None else threshold
-    flagged = proba >= threshold
-    fn = int((~flagged & (y_true == 1)).sum())
-    fp = int((flagged & (y_true == 0)).sum())
-    return (fn_weight * fn + fp) / len(y_true)
 
 
 def _top_share(y_true, proba, share: float) -> tuple[float, float]:
-    """Recall y lift al revisar el `share` de clientes con más probabilidad. Los empates se desempatan por posición."""
-    n_top = max(1, int(round(share * len(y_true))))
-    top = np.argsort(-proba, kind="stable")[:n_top]
-    recall = float(y_true[top].sum() / y_true.sum()) if y_true.sum() else 0.0
-    lift = float(y_true[top].mean() / y_true.mean()) if y_true.mean() else 0.0
+    """Recall y lift al revisar el `share` de clientes con más probabilidad.
+
+    Los empates en el corte se tratan por valor esperado: si varios clientes tienen exactamente la misma probabilidad y
+    solo caben algunos, cada uno aporta la fracción que le corresponde. Así el resultado no depende del orden de las
+    filas (una línea base constante da recall = share y lift = 1).
+    """
+    y_true, proba = np.asarray(y_true), np.asarray(proba, dtype=float)
+    n = len(y_true)
+    n_top = min(n, max(1, int(round(share * n))))
+    cutoff = proba[np.argsort(-proba, kind="stable")[n_top - 1]]
+    above, tied = proba > cutoff, proba == cutoff
+    slots = n_top - int(above.sum())                        # lugares que quedan para el grupo empatado (siempre ≥ 1)
+    expected_hits = y_true[above].sum() + y_true[tied].sum() * slots / int(tied.sum())
+    recall = float(expected_hits / y_true.sum()) if y_true.sum() else 0.0
+    lift = float((expected_hits / n_top) / y_true.mean()) if y_true.mean() else 0.0
     return recall, lift
 
 
@@ -110,9 +120,10 @@ def technical_metrics(y_true, proba, threshold: float = THEORETICAL_THRESHOLD, r
 
     - Con probabilidades (no dependen de decidir): ROC AUC, AUC-PR, log loss, Brier y tasa predicha media.
     - Con la decisión «marcar si proba ≥ threshold»: exactitud balanceada, F1 macro, precisión y recall por clase,
-      porcentaje marcado y penalización relativa. El umbral 1/6 solo es el punto óptimo si las probabilidades están
-      calibradas, así que favorece a los modelos mejor calibrados.
-    - Sensibilidad al costo: penalización con 2 a 1 y 10 a 1 (cada una con su umbral teórico 1/3 y 1/11).
+      porcentaje marcado y la penalización 5 a 1 (`penalty`). El umbral 1/6 solo es el punto óptimo si las
+      probabilidades están calibradas, así que favorece a los modelos mejor calibrados.
+    - Sensibilidad al costo: `penalty_2` y `penalty_10` usan SIEMPRE su propio umbral teórico (1/3 y 1/11), sin
+      importar `threshold`.
     - Con capacidad fija (revisar el 5 %, 10 % o `review_share` de mayor riesgo): recall y lift. Comparan solo el
       orden, sin depender de la calibración.
     """
@@ -140,9 +151,9 @@ def technical_metrics(y_true, proba, threshold: float = THEORETICAL_THRESHOLD, r
         "recall_0": recall_0,
         "recall_1": recall_1,
         "flagged_share": float(flagged.mean()),
-        "penalty": (FN_WEIGHT * fn + fp) / len(y_true),
-        "penalty_2": _penalty(y_true, proba, 2),
-        "penalty_10": _penalty(y_true, proba, 10),
+        "penalty": relative_penalty(y_true, proba, threshold, FN_WEIGHT),
+        "penalty_2": relative_penalty(y_true, proba, theoretical_threshold(2), 2),
+        "penalty_10": relative_penalty(y_true, proba, theoretical_threshold(10), 10),
         "recall_top_5": _top_share(y_true, proba, 0.05)[0],
         "recall_top_10": _top_share(y_true, proba, 0.10)[0],
         "recall_top": recall_top,
@@ -153,8 +164,9 @@ def technical_metrics(y_true, proba, threshold: float = THEORETICAL_THRESHOLD, r
 def score_folds_detailed(make_pipeline, X, y, folds, keep_predictions: bool = False):
     """Como `score_folds`, pero con todas las métricas técnicas y los segundos de ajuste de cada pliegue.
 
-    Con `keep_predictions=True` devuelve también una tabla (pliegue, fila, y_true, proba) con las predicciones de
-    validación de cada pliegue, para revisar la calibración sin volver a ajustar nada.
+    Con `keep_predictions=True` devuelve también una tabla (fold, row, y_true, proba) con las predicciones de
+    validación de cada pliegue, para revisar la calibración sin volver a ajustar nada. `row` es la posición de la fila
+    en `X`, no el ID del cliente.
     """
     y = np.asarray(y)
     rows, preds = [], []
@@ -172,25 +184,38 @@ def score_folds_detailed(make_pipeline, X, y, folds, keep_predictions: bool = Fa
 
 
 def calibration_table(y_true, proba, n_bins: int = 10) -> pd.DataFrame:
-    """Calibración por tramos: agrupa los clientes en `n_bins` grupos del mismo tamaño según su probabilidad
-    predicha y compara la probabilidad media predicha con la tasa que de verdad incumplió en cada grupo."""
-    frame = pd.DataFrame({"y": np.asarray(y_true), "p": np.asarray(proba, dtype=float)})
-    frame["tramo"] = pd.qcut(frame["p"].rank(method="first"), q=n_bins, labels=False)
-    table = frame.groupby("tramo").agg(clientes=("y", "size"), prob_predicha=("p", "mean"), tasa_observada=("y", "mean"))
+    """Calibración por tramos: agrupa a los clientes en hasta `n_bins` grupos según su probabilidad predicha y compara la
+    probabilidad media predicha (`mean_predicted`) con la tasa que de verdad incumplió (`observed_rate`) en cada grupo.
+
+    Los tramos se arman por VALOR de probabilidad: clientes con la misma probabilidad quedan siempre juntos. Cada valor
+    distinto va al tramo donde cae su posición central en el orden de menor a mayor. Con probabilidades todas distintas
+    los tramos salen del mismo tamaño; con muchos empates (por ejemplo, una calibración isotónica) puede haber menos de
+    `n_bins` tramos y de distinto tamaño, pero nunca se funden dos valores distintos que deberían quedar separados.
+    """
+    y_true, proba = np.asarray(y_true), np.asarray(proba, dtype=float)
+    n = len(y_true)
+    if n < n_bins:
+        raise ValueError(f"Hay menos clientes ({n}) que tramos ({n_bins})")
+    _, inverse, counts = np.unique(proba, return_inverse=True, return_counts=True)
+    centers = (np.cumsum(counts) - counts / 2) / n                       # posición relativa (0 a 1) del centro de cada valor
+    bin_of_value = np.minimum((centers * n_bins).astype(int), n_bins - 1)
+    frame = pd.DataFrame({"y": y_true, "p": proba, "bin": bin_of_value[inverse]})
+    table = frame.groupby("bin").agg(n_clients=("y", "size"), mean_predicted=("p", "mean"), observed_rate=("y", "mean"))
     return table.reset_index(drop=True)
 
 
 def expected_calibration_error(table: pd.DataFrame) -> float:
     """Diferencia absoluta media entre lo predicho y lo observado por tramo, ponderada por clientes (0 = perfecta)."""
-    gap = (table["prob_predicha"] - table["tasa_observada"]).abs()
-    return float((gap * table["clientes"]).sum() / table["clientes"].sum())
+    gap = (table["mean_predicted"] - table["observed_rate"]).abs()
+    return float((gap * table["n_clients"]).sum() / table["n_clients"].sum())
 
 
 def observed_rate_between(y_true, proba, low: float, high: float) -> dict:
-    """Entre los clientes con probabilidad predicha en [low, high): cuántos son, qué probabilidad media se les dio
-    y qué tasa de incumplimiento tuvieron. Sirve para ver si la zona del umbral está bien calibrada."""
+    """Entre las predicciones con probabilidad en [low, high) (`low` incluido, `high` excluido): cuántas son, qué
+    probabilidad media se les dio y qué tasa de incumplimiento tuvieron. Sirve para ver si la zona del umbral está bien
+    calibrada. Con las predicciones de varias repeticiones juntas, un mismo cliente puede contarse varias veces."""
     y_true, proba = np.asarray(y_true), np.asarray(proba, dtype=float)
     inside = (proba >= low) & (proba < high)
     n = int(inside.sum())
-    return {"clientes": n, "prob_predicha": float(proba[inside].mean()) if n else float("nan"),
-            "tasa_observada": float(y_true[inside].mean()) if n else float("nan")}
+    return {"n_predictions": n, "mean_predicted": float(proba[inside].mean()) if n else float("nan"),
+            "observed_rate": float(y_true[inside].mean()) if n else float("nan")}

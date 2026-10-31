@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 
 from proyecto.models.baselines import PayDelayRule
@@ -249,6 +250,7 @@ def test_score_folds_detailed_can_return_the_validation_predictions():
     assert len(preds) == sum(len(valid) for _, valid in folds)       # cada cliente aparece una vez por repetición
     assert set(preds.columns) == {"fold", "row", "y_true", "proba"}
     assert preds["proba"].between(0, 1).all()
+    assert (preds["y_true"].to_numpy() == y[preds["row"].to_numpy()]).all()       # cada predicción quedó junto a su cliente real
     for fold, (_, valid_idx) in enumerate(folds):
         assert set(preds.loc[preds["fold"] == fold, "row"]) == set(valid_idx)
 
@@ -257,14 +259,14 @@ def test_calibration_table_with_hand_computed_groups():
     y = [0, 0, 0, 1, 1, 1, 0, 1]
     p = [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]
     table = calibration_table(y, p, n_bins=2)
-    assert table["clientes"].tolist() == [4, 4]
-    assert table["prob_predicha"].tolist() == pytest.approx([0.25, 0.75])
-    assert table["tasa_observada"].tolist() == pytest.approx([0.25, 0.75])
+    assert table["n_clients"].tolist() == [4, 4]
+    assert table["mean_predicted"].tolist() == pytest.approx([0.25, 0.75])
+    assert table["observed_rate"].tolist() == pytest.approx([0.25, 0.75])
     assert expected_calibration_error(table) == pytest.approx(0.0)
 
 
 def test_expected_calibration_error_detects_overconfidence():
-    table = pd.DataFrame({"clientes": [10, 30], "prob_predicha": [0.2, 0.8], "tasa_observada": [0.1, 0.5]})
+    table = pd.DataFrame({"n_clients": [10, 30], "mean_predicted": [0.2, 0.8], "observed_rate": [0.1, 0.5]})
     assert expected_calibration_error(table) == pytest.approx((10 * 0.1 + 30 * 0.3) / 40)
 
 
@@ -272,10 +274,10 @@ def test_observed_rate_between_counts_only_the_clients_inside_the_range():
     y = np.array([0, 0, 0, 1, 1, 1, 0, 1])
     p = np.array([0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9])
     r = observed_rate_between(y, p, 0.25, 0.65)         # entran 0,3; 0,4 y 0,6 -> y = 0, 1, 1
-    assert r["clientes"] == 3
-    assert r["prob_predicha"] == pytest.approx((0.3 + 0.4 + 0.6) / 3)
-    assert r["tasa_observada"] == pytest.approx(2 / 3)
-    assert np.isnan(observed_rate_between(y, p, 0.95, 0.99)["tasa_observada"])
+    assert r["n_predictions"] == 3
+    assert r["mean_predicted"] == pytest.approx((0.3 + 0.4 + 0.6) / 3)
+    assert r["observed_rate"] == pytest.approx(2 / 3)
+    assert np.isnan(observed_rate_between(y, p, 0.95, 0.99)["observed_rate"])
 
 
 def test_pay_delay_rule_flags_two_or_more_months_of_delay():
@@ -286,9 +288,132 @@ def test_pay_delay_rule_flags_two_or_more_months_of_delay():
     assert PayDelayRule(min_months=3).fit(X).predict(X).tolist() == [0, 0, 1, 0, 0, 1]
 
 
-def test_pay_delay_rule_works_inside_the_tournament_metrics_and_beats_chance_only_a_little():
+def test_pay_delay_rule_works_inside_the_tournament_metrics():
     X, y = _clients()
     folds = repeated_folds(X, y, n_splits=3, n_repeats=1)
     scores = score_folds_detailed(lambda: PayDelayRule(), X, y, folds)
     assert len(scores) == 3 and scores["roc_auc"].between(0.5, 1).all()
     assert scores["flagged_share"].between(0, 1).all()
+
+
+# ---- Correcciones de las revisiones: empates, umbral, bordes y alineación ----
+def test_review_capacity_with_constant_probabilities_equals_chance_and_does_not_depend_on_row_order():
+    """Antes, una línea base constante daba más o menos recall según dónde estuvieran los incumplidores en la tabla."""
+    y = np.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0])
+    for order in (np.arange(10), np.arange(10)[::-1], np.random.default_rng(1).permutation(10)):
+        m = technical_metrics(y[order], np.zeros(10))
+        assert m["recall_top"] == pytest.approx(0.2) and m["lift_top"] == pytest.approx(1.0)
+        assert m["recall_top_10"] == pytest.approx(0.1) and m["recall_top_5"] == pytest.approx(0.1)   # el 5 % de 10 se redondea a 1 cliente
+
+
+def test_review_capacity_with_a_zero_one_rule_shares_the_tied_slots_proportionally():
+    proba = np.array([1.0] + [0.0] * 9)
+    y_a = np.array([1] + [0] * 8 + [1])          # el otro incumplidor está en el grupo empatado
+    y_b = np.array([1, 1] + [0] * 8)             # ...y ahora está en la fila 1: debe dar lo mismo
+    # 2 lugares: el cliente marcado (acierto) + 1 lugar repartido entre 9 empatados, de los que 1 incumple -> 1 + 1/9
+    for y in (y_a, y_b):
+        assert technical_metrics(y, proba)["recall_top"] == pytest.approx((1 + 1 / 9) / 2)
+
+
+def test_threshold_changes_the_decision_metrics_and_the_5_to_1_penalty_but_not_the_other_cost_scenarios():
+    default, strict = technical_metrics(Y10, P10), technical_metrics(Y10, P10, threshold=0.5)
+    assert strict["flagged_share"] != default["flagged_share"] and strict["penalty"] != default["penalty"]
+    assert strict["penalty_2"] == default["penalty_2"] and strict["penalty_10"] == default["penalty_10"]
+    assert strict["penalty"] == pytest.approx(relative_penalty(Y10, P10, threshold=0.5))
+
+
+def test_the_three_penalties_come_from_the_single_penalty_function():
+    m = technical_metrics(Y10, P10)
+    assert m["penalty_2"] == pytest.approx(relative_penalty(Y10, P10, threshold=1 / 3, fn_weight=2))
+    assert m["penalty_10"] == pytest.approx(relative_penalty(Y10, P10, threshold=1 / 11, fn_weight=10))
+    assert relative_penalty(list(Y10), list(P10)) == pytest.approx(m["penalty"])           # acepta listas
+
+
+def test_calibration_groups_equal_probabilities_together_whatever_the_row_order():
+    """Antes los empates se repartían por posición y la tasa observada de un tramo cambiaba con el orden de las filas."""
+    proba = np.array([1.0] * 4 + [0.0] * 6)
+    y = np.array([1, 1, 0, 0, 1, 0, 0, 0, 0, 0])
+    first = calibration_table(y, proba, n_bins=5)
+    reversed_ = calibration_table(y[::-1], proba[::-1], n_bins=5)
+    pd.testing.assert_frame_equal(first, reversed_)
+    assert first["n_clients"].tolist() == [6, 4]                   # menos tramos que n_bins, de distinto tamaño
+    assert first["mean_predicted"].tolist() == pytest.approx([0.0, 1.0])
+    assert first["observed_rate"].tolist() == pytest.approx([1 / 6, 2 / 4])
+
+
+def test_calibration_with_a_constant_probability_is_a_single_group_and_too_few_clients_fail():
+    table = calibration_table([0, 1, 0, 0, 1], [0.2] * 5, n_bins=3)
+    assert len(table) == 1 and table.loc[0, "n_clients"] == 5
+    with pytest.raises(ValueError):
+        calibration_table([0, 1], [0.2, 0.8], n_bins=10)
+
+
+def test_observed_rate_between_includes_the_low_edge_and_excludes_the_high_edge():
+    r = observed_rate_between([0, 1, 1, 0], [0.12, 0.15, 0.22, 0.30], low=0.12, high=0.22)
+    assert r["n_predictions"] == 2 and r["observed_rate"] == pytest.approx(0.5)
+
+
+def test_pay_delay_rule_needs_the_pay_0_column():
+    with pytest.raises(KeyError):
+        PayDelayRule().fit(pd.DataFrame({"AGE": [30]})).predict_proba(pd.DataFrame({"AGE": [30]}))
+
+
+class _RecordingLogit(LogisticRegression):
+    """Anota con qué filas se ajusta; se usa dentro de CalibratedClassifierCV."""
+    current: list = []
+
+    def fit(self, X, y, *args, **kwargs):
+        _RecordingLogit.current.append(set(X.index))
+        return super().fit(X, y, *args, **kwargs)
+
+
+def test_calibration_inside_a_fold_only_sees_the_training_rows_of_that_fold():
+    """CalibratedClassifierCV ajusta y calibra con su propia validación interna: nunca debe tocar la validación externa."""
+    X, y = _clients(300)
+    X = X[["LIMIT_BAL", "AGE", "PAY_0", "PAY_2"]].astype(float)
+    folds = repeated_folds(X, y, n_splits=3, n_repeats=1)
+    snapshots = []
+
+    def make():
+        _RecordingLogit.current = []
+        snapshots.append(_RecordingLogit.current)
+        return CalibratedClassifierCV(_RecordingLogit(max_iter=500), method="isotonic", cv=3)
+
+    score_folds_detailed(make, X, y, folds)
+    assert len(snapshots) == 3
+    for seen, (train_idx, valid_idx) in zip(snapshots, folds):
+        used = set().union(*seen)
+        assert used <= set(X.index[train_idx]) and used.isdisjoint(X.index[valid_idx])
+
+
+def test_calibration_keeps_apart_two_values_when_a_bin_edge_falls_exactly_on_a_repeated_value():
+    """Con 6 ceros y 5 unos y 2 tramos, el cuantil del medio cae justo en 0: antes salía un solo tramo con error 0."""
+    proba = np.array([0.0] * 6 + [1.0] * 5)
+    y = np.array([0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1])
+    table = calibration_table(y, proba, n_bins=2)
+    assert table["n_clients"].tolist() == [6, 5]
+    assert table["observed_rate"].tolist() == pytest.approx([1 / 6, 4 / 5])             # 1 de 6 y 4 de 5 incumplen
+    assert expected_calibration_error(table) == pytest.approx((6 * (1 / 6) + 5 * 0.2) / 11)   # antes salía 0 por fundir los dos tramos
+
+
+def test_calibration_with_all_different_probabilities_makes_equal_sized_groups():
+    table = calibration_table(np.arange(100) % 2, np.linspace(0, 1, 100), n_bins=10)
+    assert table["n_clients"].tolist() == [10] * 10
+
+
+def test_default_seed_is_the_project_seed_and_folds_are_reproducible():
+    """Si alguien cambia RANDOM_STATE o la semilla por defecto, se movería a la vez los pliegues de los notebooks 04 y 05."""
+    from proyecto.config import RANDOM_STATE
+    X, y = _clients()
+    assert RANDOM_STATE == 42
+    default, explicit = repeated_folds(X, y), repeated_folds(X, y, seed=RANDOM_STATE)
+    assert all((a[0] == b[0]).all() and (a[1] == b[1]).all() for a, b in zip(default, explicit))
+    other = repeated_folds(X, y, seed=7)
+    assert any(not (a[1] == b[1]).all() for a, b in zip(default, other))
+    again = repeated_folds(X, y, seed=7)
+    assert all((a[1] == b[1]).all() for a, b in zip(other, again))
+
+
+def test_theoretical_threshold_has_a_single_definition():
+    from proyecto.models.evaluate import FN_WEIGHT, theoretical_threshold
+    assert THEORETICAL_THRESHOLD == theoretical_threshold(FN_WEIGHT) == pytest.approx(1 / 6)
