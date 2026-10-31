@@ -65,20 +65,20 @@ Se conserva la propuesta de comparar modelos con y sin `PAY_0` mediante validaci
 
 | # | Hallazgo (con cifra) | Decisión | Motivo |
 |---|---|---|---|
-| 1 | 30.000 ID distintos, uno por fila | Conservar partición original 80/20, estratificada, semilla 42; excluir ID | Evita solapamiento de ID; no elimina la exposición previa de la prueba |
-| 2 | 22,12 % incumple; siempre paga: exactitud 77,88 %, recall 0 % | Mantener ROC AUC, recall y AUC-PR; evaluar penalización relativa y carga de revisión | La exactitud aislada no refleja detección ni la hipótesis económica 5 a 1 |
-| 3 | EDUCATION 0, 5 y 6: 345 clientes (1,15 %); MARRIAGE 0: 54 | Conservar agrupación fija en otros (4 y 3), previa a codificación; garantizar igual regla en entrenamiento e inferencia | Es una convención documentada, no identidad semántica demostrada; revisar integración en pipeline en fase posterior |
-| 4 | PAY_0: estados -2, -1 y 0, aproximadamente 13–17 %; código 2, 69,1 %; código 5, 50,0 % | Mantener codificación numérica como referencia provisional y comparar alternativas en validación | Mezcla estados y meses; asociación no causal ni estrictamente creciente; documentar códigos |
-| 5 | 1.930 clientes (6,43 %) con BILL_AMT negativo; PAY_AMT2: p99 76.651, máximo 1.684.259 | Conservar negativos plausibles; log1p solo en columnas compatibles; comparar Yeo-Johnson dentro del pipeline | log y log1p no resuelven todos los negativos; cualquier ajuste se aprende dentro de entrenamiento |
-| 6 | Mujeres: tasa 20,8 %, recall regla 32,9 %; hombres: 24,2 % y 32,7 % | Probar con y sin SEX y auditar grupos de sexo, edad y matrimonio | Recall similar no demuestra equidad; faltan otras métricas e incertidumbre |
-| 7 | PAY_0: correlación 0,33 con el objetivo | Comparar modelo con y sin PAY_0, verificando disponibilidad al decidir | Mide sensibilidad predictiva; no prueba causalidad ni ausencia de fuga |
-| 8 | 35 filas idénticas sin ID; 3.931 clientes exceden su límite | Conservar filas sin borrado automático; documentar plausibilidad | ID distintos y coincidencias no prueban errores ni garantizan independencia real entre personas |
-| 9 | n_atraso: correlación 0,40 frente a PAY_0 0,33; tasas 11,7 % a 70,3 % | Conservar como candidata y medir mejora incremental en validación | Asociación exploratoria no demuestra causalidad ni ganancia predictiva adicional |
-| 10 | Facturas: correlación media 0,89; ratio_pago −0,01 y tendencia −0,03 con el objetivo | Comparar resúmenes o regularización y las candidatas; definir vacíos y extremos del ratio | Correlación lineal no determina utilidad no lineal ni obliga a eliminar variables |
-| 11 | Regla: penalización 0,775; marcar a todos: 0,779; referencia exploratoria del modelo: 0,57 | Comparar alternativas sobre las mismas observaciones de validación y con la misma matriz | No demuestra ahorro cercano al 27 % ni impacto económico; referencia del modelo pendiente de trazabilidad |
-| 12 | LightGBM 0,7813; HistGradientBoosting 0,7806; XGBoost 0,7668; logística 0,7272 | Conservar boosting y logística como candidatos, sin ganador definitivo | Son promedios exploratorios; faltan comparación pareada y selección comparable |
-| 13 | HistGradientBoosting: quintil superior predicho 0,568 y observado 0,567 | Verificar calibración del modelo concreto cerca del umbral; seleccionar umbral solo con validación | Evidencia agregada preliminar no garantiza calibración cerca del umbral teórico 1/6 ≈ 0,167 |
-| 14 | De 14.400 a 19.200 filas: aumento AUC 0,0009 | Mantener abiertas hipótesis de más datos y mejores variables | Sin variabilidad ni repetición no se puede afirmar saturación ni mejora garantizada |
+| 1 | 30.000 ID distintos, uno por fila | Mantener la partición 80/20, estratificada, semilla 42, y excluir el ID | Ningún ID queda en dos partes; no cambia que la prueba ya se vio |
+| 2 | 22,12 % incumple; «siempre paga»: exactitud 77,88 %, recall 0 % | Usar ROC AUC, recall y AUC-PR; medir también la penalización relativa y la carga de revisión | La exactitud sola no mide la detección ni la hipótesis 5 a 1 |
+| 3 | EDUCATION 0, 5 y 6: 345 clientes (1,15 %); MARRIAGE 0: 54 | Agrupar en «otros» (4 y 3) antes de codificar, con la misma regla en entrenamiento e inferencia | Es una convención, no un significado demostrado; hay que integrarla al pipeline |
+| 4 | PAY_0: estados -2, -1 y 0 con 13–17 %; código 2, 69,1 %; código 5, 50,0 % | Dejar los códigos como números por ahora y comparar otras codificaciones con validación | Mezclan estados y meses de atraso; la relación no es causal ni siempre creciente; hay que documentar los códigos |
+| 5 | 1.930 clientes (6,43 %) con BILL_AMT negativo; PAY_AMT2: p99 76.651, máximo 1.684.259 | Conservar los negativos plausibles; usar log1p solo donde se pueda; comparar Yeo-Johnson dentro del pipeline | log y log1p no sirven con todos los negativos; cualquier transformación se aprende solo con entrenamiento |
+| 6 | Mujeres: tasa 20,8 %, recall de la regla 32,9 %; hombres: 24,2 % y 32,7 % | Probar con y sin SEX y revisar errores por sexo, edad y estado civil | Un recall parecido no demuestra equidad; faltan otras métricas e incertidumbre |
+| 7 | PAY_0: correlación 0,33 con el objetivo | Comparar el modelo con y sin PAY_0 y confirmar que se conoce al decidir | Mide cuánto depende el modelo de ella; no prueba causalidad ni ausencia de fuga |
+| 8 | 35 filas idénticas sin ID; 3.931 clientes sobre su límite | Conservar las filas y documentar que son plausibles | Los ID son distintos y las coincidencias no prueban errores |
+| 9 | n_atraso: correlación 0,40 frente a 0,33 de PAY_0; tasas de 11,7 % a 70,3 % | Conservarla como candidata y medir con validación si mejora el modelo | Es una asociación; no demuestra que aporte algo nuevo |
+| 10 | Facturas: correlación media 0,89; ratio_pago −0,01 y tendencia −0,03 con el objetivo | Comparar resúmenes o regularización, y las candidatas; definir cómo tratar vacíos y extremos del ratio | Una correlación lineal baja no descarta una relación más compleja ni obliga a eliminar variables |
+| 11 | Regla: penalización 0,775; marcar a todos: 0,779; referencia exploratoria del modelo: 0,57 | Comparar las alternativas con las mismas observaciones de validación y la misma matriz | No demuestra un ahorro del 27 % ni impacto económico; el 0,57 está pendiente de verificar |
+| 12 | LightGBM 0,7813; HistGradientBoosting 0,7806; XGBoost 0,7668; logística 0,7272 | Mantener boosting y logística como candidatos, sin ganador | Son promedios exploratorios; falta comparar con diferencias pareadas y configuraciones ajustadas |
+| 13 | HistGradientBoosting: quintil superior predicho 0,568 y observado 0,567 | Revisar la calibración del modelo concreto cerca del umbral y elegir el umbral solo con validación | La evidencia es preliminar y agregada; no garantiza calibración cerca de 1/6 ≈ 0,167 |
+| 14 | De 14.400 a 19.200 filas: el AUC sube 0,0009 | Dejar abiertas las dos hipótesis: más datos y mejores variables | Sin variación ni repeticiones no se puede decir que ya se saturó ni que habrá mejoras |
 
 ## Unidad de análisis y partición
 
@@ -88,7 +88,7 @@ Cada fila es un cliente distinto (30.000 `ID` únicos), así que **partir por fi
 
 - Contrastar la hipótesis económica 5 a 1. El umbral teórico 1/6 ≈ 0,167 depende de probabilidades calibradas y de la matriz asumida, sin otros costos o restricciones. El umbral posterior se seleccionará exclusivamente mediante validación dentro del entrenamiento original.
 - La comparación oficial de modelos (con optimización de cada candidato) se hace en `05_torneo.ipynb`.
-- Medir el modelo con y sin `PAY_0` y con y sin `SEX` (etapa 4).
+- Medir el modelo con y sin `PAY_0` y con y sin `SEX` (etapa 4). **Hecho en `reports/04_features.md`:** sin `PAY_0` el AUC cae unos 0,03 y sin `SEX` baja unos 0,001. Allí también se midieron `n_atraso` y las demás variables candidatas: `n_atraso` no mejora ningún modelo.
 - Documentar el significado de los códigos de pago y comparar sus codificaciones; no asumir que el orden numérico implica riesgo estrictamente creciente.
 - Revisar posteriormente la integración de limpieza fija, imputación, codificación y transformaciones en el pipeline, conservando el tratamiento justificado de negativos y filas. log1p solo admite valores mayores que -1; Yeo-Johnson es una candidata para montos con negativos.
 - Recalcular comparaciones homogéneas solo en una fase autorizada. La prueba original se reportará como complementaria; cambiar la semilla no proporciona datos independientes.
