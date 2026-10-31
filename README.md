@@ -39,6 +39,10 @@ clonan **este** repositorio. Para arrancar, sigue `material-del-curso/guias/mont
 ## Equipo
 | Integrante | Rol |
 |---|---|
-| | |
+| Juan David Ardila Arboleda | Analista de Datos |
+| Lina Isabel Vasquez Villegas | Analista de Datos |
+| Andres Felipe Orozco Roa | Analista de Datos |
+| Cristina Garces | Analista de Datos |
+| Estefania Cervera | Analista de Datos |
 
 Especificación del proyecto: [`especificacion-proyecto.md`](especificacion-proyecto.md) · Especificaciones por etapa: [`especificaciones/`](especificaciones/)
