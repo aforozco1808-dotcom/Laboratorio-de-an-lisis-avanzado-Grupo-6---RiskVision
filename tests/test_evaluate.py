@@ -3,13 +3,19 @@ import pandas as pd
 import pytest
 from sklearn.linear_model import LogisticRegression
 
+from proyecto.models.baselines import PayDelayRule
 from proyecto.models.evaluate import (
     THEORETICAL_THRESHOLD,
+    calibration_table,
+    expected_calibration_error,
+    observed_rate_between,
     decide,
     improvement_over_noise,
     relative_penalty,
     repeated_folds,
     score_folds,
+    score_folds_detailed,
+    technical_metrics,
 )
 from proyecto.models.train import build_pipeline
 from tests.test_pipeline import _clients
@@ -146,3 +152,143 @@ def test_decide_at_the_exact_borders():
     assert not decide({"m": _result(0.01, 1.5, 11)})[0]
     # una mejora promedio de exactamente 0 no cuenta como empeorar, pero tampoco pasa
     assert not decide({"m": _result(0.0, 0.0, 15)})[0]
+
+
+# ---- Torneo: métricas técnicas (valores calculados a mano) ----
+Y10 = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+P10 = [0.9, 0.2, 0.8, 0.1, 0.05, 0.05, 0.02, 0.02, 0.01, 0.01]
+
+
+def test_technical_metrics_match_hand_computed_values():
+    m = technical_metrics(Y10, P10)           # umbral 1/6: se marcan los clientes 0, 1 y 2 (2 aciertos y 1 falsa alarma)
+    assert m["roc_auc"] == pytest.approx(15 / 16)
+    assert m["avg_precision"] == pytest.approx((1 / 1 + 2 / 3) / 2)
+    assert m["precision_1"] == pytest.approx(2 / 3) and m["recall_1"] == 1.0 and m["recall_0"] == pytest.approx(7 / 8)
+    assert m["balanced_accuracy"] == pytest.approx((1 + 7 / 8) / 2)
+    assert m["flagged_share"] == pytest.approx(0.3)
+    assert m["penalty"] == pytest.approx(1 / 10)          # 0 falsos negativos y 1 falsa alarma
+    assert m["mean_proba"] == pytest.approx(0.216)
+
+
+def test_technical_metrics_review_capacity_does_not_depend_on_the_threshold():
+    a, b = technical_metrics(Y10, P10, threshold=0.01), technical_metrics(Y10, P10, threshold=0.99)
+    for key in ("recall_top", "lift_top", "roc_auc"):
+        assert a[key] == b[key]
+    # el 20 % de 10 clientes son 2: los de proba 0,9 y 0,8 (uno incumple) -> recall 1/2 y lift (1/2)/(2/10)
+    assert a["recall_top"] == pytest.approx(0.5) and a["lift_top"] == pytest.approx(2.5)
+
+
+def test_technical_metrics_work_for_a_constant_baseline():
+    m = technical_metrics(Y10, [0.0] * 10)    # «siempre paga»
+    assert m["roc_auc"] == 0.5 and m["recall_1"] == 0.0 and m["recall_0"] == 1.0
+    assert m["penalty"] == pytest.approx(5 * 2 / 10)
+    assert np.isfinite(m["log_loss"])
+
+
+def test_score_folds_detailed_returns_one_row_per_fold_with_all_metrics_and_time():
+    X, y = _clients()
+    folds = repeated_folds(X, y, n_splits=3, n_repeats=1)
+    scores = score_folds_detailed(lambda: build_pipeline(LogisticRegression(max_iter=500), linear=True), X, y, folds)
+    assert len(scores) == 3
+    assert {"roc_auc", "avg_precision", "recall_0", "recall_1", "recall_top", "log_loss", "fit_seconds"} <= set(scores.columns)
+    assert (scores["fit_seconds"] >= 0).all() and scores["roc_auc"].between(0.5, 1).all()
+
+
+def test_score_folds_detailed_fits_only_on_training_rows_and_scores_only_on_validation_rows():
+    """Misma protección anti-fuga que score_folds: si ajustara con todas las filas, este test fallaría."""
+    X, y = _clients()
+    folds = repeated_folds(X, y, n_splits=3, n_repeats=1)
+    spies = []
+
+    def make():
+        spies.append(_SpyModel())
+        return spies[-1]
+
+    score_folds_detailed(make, X, y, folds)
+    assert len(spies) == len(folds)
+    for spy, (train_idx, valid_idx) in zip(spies, folds):
+        assert spy.fit_index == set(X.index[train_idx])
+        assert spy.predict_index == set(X.index[valid_idx])
+
+
+def test_score_folds_detailed_agrees_with_score_folds_on_the_shared_metrics():
+    X, y = _clients()
+    folds = repeated_folds(X, y, n_splits=3, n_repeats=1)
+
+    def make():
+        return build_pipeline(LogisticRegression(max_iter=500), linear=True)
+
+    short, detailed = score_folds(make, X, y, folds), score_folds_detailed(make, X, y, folds)
+    for column in ("roc_auc", "avg_precision", "penalty"):
+        assert detailed[column].tolist() == pytest.approx(short[column].tolist())
+
+
+# ---- Torneo, ampliación: sensibilidad al costo, calibración y regla base ----
+def test_penalty_for_other_cost_ratios_uses_each_theoretical_threshold():
+    m = technical_metrics(Y10, P10)
+    # 2 a 1: umbral 1/3 -> se marcan los de proba 0,9 y 0,8 (1 acierto, 1 falsa alarma) y se escapa el de 0,2
+    assert m["penalty_2"] == pytest.approx((2 * 1 + 1) / 10)
+    # 10 a 1: umbral 1/11 ≈ 0,0909 -> se marcan 0,9; 0,2; 0,8 y 0,1 (2 aciertos y 2 falsas alarmas)
+    assert m["penalty_10"] == pytest.approx((10 * 0 + 2) / 10)
+    assert m["penalty"] == pytest.approx(0.1)               # 5 a 1, igual que antes
+
+
+def test_recall_at_other_review_capacities():
+    m = technical_metrics(Y10, P10)
+    # 10 clientes: revisar el 10 % es 1 cliente (el de 0,9, que incumple) y el 5 % se redondea a 1 cliente
+    assert m["recall_top_5"] == pytest.approx(0.5) and m["recall_top_10"] == pytest.approx(0.5)
+    assert m["recall_top"] == pytest.approx(0.5)             # el 20 % son 2 clientes: 0,9 y 0,8
+
+
+def test_score_folds_detailed_can_return_the_validation_predictions():
+    X, y = _clients()
+    folds = repeated_folds(X, y, n_splits=3, n_repeats=1)
+    scores, preds = score_folds_detailed(lambda: build_pipeline(LogisticRegression(max_iter=500), linear=True), X, y, folds,
+                                         keep_predictions=True)
+    assert len(scores) == 3
+    assert len(preds) == sum(len(valid) for _, valid in folds)       # cada cliente aparece una vez por repetición
+    assert set(preds.columns) == {"fold", "row", "y_true", "proba"}
+    assert preds["proba"].between(0, 1).all()
+    for fold, (_, valid_idx) in enumerate(folds):
+        assert set(preds.loc[preds["fold"] == fold, "row"]) == set(valid_idx)
+
+
+def test_calibration_table_with_hand_computed_groups():
+    y = [0, 0, 0, 1, 1, 1, 0, 1]
+    p = [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]
+    table = calibration_table(y, p, n_bins=2)
+    assert table["clientes"].tolist() == [4, 4]
+    assert table["prob_predicha"].tolist() == pytest.approx([0.25, 0.75])
+    assert table["tasa_observada"].tolist() == pytest.approx([0.25, 0.75])
+    assert expected_calibration_error(table) == pytest.approx(0.0)
+
+
+def test_expected_calibration_error_detects_overconfidence():
+    table = pd.DataFrame({"clientes": [10, 30], "prob_predicha": [0.2, 0.8], "tasa_observada": [0.1, 0.5]})
+    assert expected_calibration_error(table) == pytest.approx((10 * 0.1 + 30 * 0.3) / 40)
+
+
+def test_observed_rate_between_counts_only_the_clients_inside_the_range():
+    y = np.array([0, 0, 0, 1, 1, 1, 0, 1])
+    p = np.array([0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9])
+    r = observed_rate_between(y, p, 0.25, 0.65)         # entran 0,3; 0,4 y 0,6 -> y = 0, 1, 1
+    assert r["clientes"] == 3
+    assert r["prob_predicha"] == pytest.approx((0.3 + 0.4 + 0.6) / 3)
+    assert r["tasa_observada"] == pytest.approx(2 / 3)
+    assert np.isnan(observed_rate_between(y, p, 0.95, 0.99)["tasa_observada"])
+
+
+def test_pay_delay_rule_flags_two_or_more_months_of_delay():
+    X = pd.DataFrame({"PAY_0": [2, 1, 3, -1, 0, 8]})
+    rule = PayDelayRule().fit(X)
+    assert rule.predict_proba(X)[:, 1].tolist() == [1, 0, 1, 0, 0, 1]
+    assert rule.predict(X).tolist() == [1, 0, 1, 0, 0, 1]
+    assert PayDelayRule(min_months=3).fit(X).predict(X).tolist() == [0, 0, 1, 0, 0, 1]
+
+
+def test_pay_delay_rule_works_inside_the_tournament_metrics_and_beats_chance_only_a_little():
+    X, y = _clients()
+    folds = repeated_folds(X, y, n_splits=3, n_repeats=1)
+    scores = score_folds_detailed(lambda: PayDelayRule(), X, y, folds)
+    assert len(scores) == 3 and scores["roc_auc"].between(0.5, 1).all()
+    assert scores["flagged_share"].between(0, 1).all()
