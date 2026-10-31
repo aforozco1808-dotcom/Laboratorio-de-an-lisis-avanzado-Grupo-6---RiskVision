@@ -28,3 +28,7 @@ mlruns/
 
 # Modelo intermedio (pesado): solo se sube models/model.joblib
 models/final_pipeline.joblib
+
+# Datos procesados: se regeneran con notebooks/03_preprocesamiento.ipynb
+data/processed/*
+!data/processed/.gitkeep

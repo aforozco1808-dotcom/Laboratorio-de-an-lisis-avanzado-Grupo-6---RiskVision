@@ -48,6 +48,10 @@
 | 13 | Calibración buena (predicho 0,568 frente a real 0,567 en el quintil más alto) | Usar probabilidades para el umbral de costos; confirmar con el modelo final | El umbral depende de que «30 %» signifique 30 % |
 | 14 | De 14.400 a 19.200 filas el ROC AUC sube solo 0,0009 | Invertir en variables, no en más datos | La curva ya se aplanó |
 
+## Unidad de análisis y partición
+
+Cada fila es un cliente distinto (30.000 `ID` únicos), así que **partir por fila es válido**: es imposible que un cliente quede en entrenamiento y en prueba. Se estratifica por el objetivo (22,12 % incumple) con 80 % entrenamiento (24.000) y 20 % prueba (6.000), semilla 42. `tests/test_split.py` lo verifica y falla si se quita la estratificación. Implementación: `src/proyecto/data/split.py`.
+
 ## Qué queda abierto
 
 - La proporción de costos 5 a 1 es un supuesto por validar; de ella depende el umbral.
