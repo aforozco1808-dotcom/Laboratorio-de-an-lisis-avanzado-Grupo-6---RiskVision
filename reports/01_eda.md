@@ -1,7 +1,9 @@
 # Informe del EDA
 
 > Resultado de `notebooks/02_eda.ipynb` (RiskVision, Grupo 6). Cada hallazgo termina en una decisión,
-> que se implementará con pruebas en `src/proyecto/data/` en la etapa de preprocesamiento.
+> que orienta limpieza y futuras hipótesis de modelado. Esta revisión documental no implementa cambios en el notebook 03.
+
+**Alcance:** las descripciones, asociaciones, regla y auditoría de grupos usan el dataset completo, incluidas las filas de la prueba original. Solo el adelanto de modelos usa el 80 % original de entrenamiento. Se conservan las cifras guardadas sin recalcularlas. La prueba original ya fue explorada y evaluada; sus métricas no son una evaluación final completamente independiente. Las nuevas decisiones se tomarán solo mediante validación dentro del entrenamiento original; se propone validación cruzada anidada, reconociendo que no elimina la exposición previa. Una evaluación final independiente requeriría datos nuevos no utilizados para decidir.
 
 ## Qué son los datos
 
@@ -19,41 +21,74 @@
 - 1.930 clientes (6,43 %) tienen algún `BILL_AMT` negativo; hay colas largas en `PAY_AMT*` (en `PAY_AMT2`, percentil 99 = 76.651 y máximo = 1.684.259).
 - Las 6 facturas mensuales están muy correlacionadas entre sí (0,89 en promedio).
 - 3.931 clientes facturan por encima de su límite en algún mes y 795 no tienen movimiento en 6 meses (plausibles).
-- Línea base de negocio: la regla «marcar si `PAY_0` ≥ 2» marca al 10,4 %, tiene recall 32,8 % y precision 69,6 %, y su costo (5 a 1) es 0,775.
+- Línea base de negocio: la regla «marcar si `PAY_0` ≥ 2» marca al 10,4 %, tiene recall 32,8 % y precision 69,6 %, y su penalización relativa bajo la hipótesis económica 5 a 1 del grupo es 0,775; no es un costo observado del banco ni dinero.
 - Línea base de equidad (misma regla): recall 32,7 % en hombres y 32,9 % en mujeres; entre 30 % y 35 % según la edad.
-- Sin datos personales (solo un `ID` anónimo). `SEX`, `AGE` y `MARRIAGE` son atributos sensibles.
+- Sin nombres ni documentos (solo un `ID` anónimo). `SEX`, `AGE` y `MARRIAGE` son atributos sensibles.
 
-## Sospechas de fuga de información
+## Asociaciones y límites del proceso
 
-- No hay una fuga evidente: `PAY_*`, `BILL_AMT*` y `PAY_AMT*` cubren abril a septiembre, antes del mes que se predice.
-- `PAY_0` (estado de septiembre) es la más fuerte (correlación 0,33; quien lleva 2 o más meses de atraso incumple el 69 % o más). Es legítima pero dominante; se mide el modelo con y sin ella.
-- El riesgo está en el proceso: escalar o imputar antes de partir, o usar la prueba para decidir.
+**Columnas y proceso:** `PAY_*`, `BILL_AMT*` y `PAY_AMT*` cubren abril a septiembre, antes del mes objetivo; no se identifica una fuga temporal evidente, condicionada a que estén disponibles al decidir. `PAY_0` es la variable original más correlacionada con el objetivo (0,33), no necesariamente la más importante en un modelo. Los estados -2, -1 y 0 muestran aproximadamente 13–17 % de incumplimiento; el código 2, 69,1 %, pero desde ese código las tasas no aumentan estrictamente (ver la tabla de PAY_0 en la sección 3.3 del notebook). Son asociaciones, no causas.
+
+Se conserva la propuesta de comparar modelos con y sin `PAY_0` mediante validación dentro del entrenamiento; esto no sustituye la revisión temporal. El EDA global ya consultó la prueba original y el notebook de selección ya la evaluó. En adelante no se usará para seleccionar variables, modelo, calibración ni umbral, y no se presentará como evaluación final independiente.
+
+## Variables candidatas
+
+**Lectura exploratoria sobre el dataset completo:**
+- Las 6 facturas están **muy correlacionadas** (0,89 en promedio), pero no son idénticas. Esto motiva probar resúmenes o regularización sin eliminar información automáticamente.
+- **`n_atraso` es candidata por asociación:** su correlación con el objetivo (0,40) supera a la de `PAY_0` (0,33). La tasa observada va de 11,7 % con 0 meses codificados con atraso a 70,3 % con 6. No demuestra causalidad, mejora incremental ni que sea la mejor variable nueva.
+- `ratio_pago` (−0,01) y `tendencia` (−0,03) tienen poca asociación lineal con el objetivo. Esto no permite anticipar su utilidad en relaciones no lineales o interacciones.
+- El código calcula `ratio_pago` como suma de pagos dividida por suma de facturas truncadas a cero; si el denominador es cero genera un vacío. Es un resumen de saldos mensuales, no una fracción exacta de deuda liquidada. Antes de incorporarlo al pipeline hay que definir el manejo de vacíos y extremos. Todas las candidatas se compararán dentro del entrenamiento original.
+
+## Comparación exploratoria y calibración
+
+**Lectura:**
+- **Promedios próximos en esta exploración:** LightGBM 0,7813 e HistGradientBoosting 0,7806; como referencia histórica, Gradient Boosting obtuvo 0,7815. XGBoost inicial queda en 0,7668 y regresión logística en 0,7272. La diferencia entre los dos primeros es pequeña respecto a la dispersión entre folds (≈ 0,006), pero no demuestra empate estadístico. La elección requiere evaluación comparable de configuraciones y diferencias pareadas dentro del entrenamiento.
+- **Indicios de calibración agregada en HistGradientBoosting:** el quintil superior tiene media predicha 0,568 y observada 0,567; el Brier 0,1339 mejora la referencia constante 0,1723. Brier no mide exclusivamente calibración y cinco quintiles pueden ocultar desajustes locales. No garantiza calibración cerca de `1/6 ≈ 0,167` ni en Gradient Boosting optimizado; debe comprobarse el modelo concreto.
+- **Ganancia pequeña en el tramo observado:** de 14.400 a 19.200 filas el AUC aumenta 0,0009. Sin dispersión, repetición ni tamaños mayores no se puede concluir que más datos ayuden poco ni que mejores variables garanticen mejoras.
+- **Candidatos para el torneo:** conservar gradient boosting y regresión logística como contraste interpretable, sin declarar ganador definitivo ni utilidad económica. SHAP puede describir contribuciones a predicciones; no explica causas ni demuestra el efecto de intervenir.
+
+## Regla y capacidad
+
+**Lectura exploratoria sobre el dataset completo:**
+- La regla marca al 10,4 % y presenta precision 69,6 % y recall 32,8 %: detecta aproximadamente 1 de cada 3 incumplidores.
+- Su penalización media (0,775) es próxima a marcar a todos (0,779). El 0,57 del modelo en el notebook 01 se conserva como referencia exploratoria pendiente de trazabilidad. No se evaluaron aquí sobre las mismas observaciones; no demuestra superioridad validada ni ahorro económico. La afirmación previa de ahorro cercano al 27 % se retira como conclusión demostrada.
+- Con el orden usado, el 5–10 % inicial tiene lift 3,2–3,3; al revisar 20 %, el lift es 2,4 y se captura el 48,5 % de los incumplidores. Son resultados descriptivos, sensibles a empates en el orden y a esta muestra; no prueban impacto de contactar clientes ni desempeño futuro.
+- Con matriz `[[0, 1], [5, 0]]`, el umbral teórico es `1/6 ≈ 0,167` solo para probabilidades calibradas y sin otros costos o restricciones. `PAY_0 >= 2` es una regla sobre un código, no ese umbral de probabilidad. El umbral operativo se seleccionará posteriormente solo mediante validación dentro del entrenamiento original.
+
+## Equidad
+
+**Lectura:** el recall observado es parecido en hombres y mujeres (32,7 % y 32,9 %), mientras sus tasas de incumplimiento son 24,2 % y 20,8 %. Por edad el recall varía entre 30 % y 35 %. Esto no demuestra equidad: faltan otras tasas de error, precision e incertidumbre, y el análisis usa el dataset completo. Son asociaciones descriptivas, no explicaciones causales.
+
+`MARRIAGE` tiene grupos de 54 y 323 clientes en la tabla de categorías, pero aquí no se calcularon sus errores. La auditoría posterior debe usar la agrupación definitiva, incluir soporte y comparar falsos positivos, precision y recall con incertidumbre. No se inventan esos resultados en esta revisión.
 
 ## Decisiones
 
 | # | Hallazgo (con cifra) | Decisión | Motivo |
 |---|---|---|---|
-| 1 | 30.000 `ID` distintos: ningún cliente se repite | Partir por fila (80/20, estratificado, semilla 42) y excluir `ID` del modelo | No hay riesgo de que un cliente quede en entrenamiento y prueba; `ID` no describe comportamiento |
-| 2 | 22,12 % incumple; «siempre paga» acierta 77,88 % con recall 0 % | Estratificar y usar ROC AUC (más recall y AUC-PR de control), no la exactitud | La exactitud premia no detectar a nadie; el error caro es el falso negativo |
-| 3 | `EDUCATION` 0, 5 y 6 suman 345 clientes (1,15 %) y `MARRIAGE` 0 son 54, sin documentar | Agrupar esos códigos en «otros» (4 y 3) dentro del pipeline antes de codificar | Categorías sin significado conocido; evita categorías casi vacías |
-| 4 | `PAY_*` mezcla estados con meses de atraso; la tasa de incumplimiento sube de 13–17 % a 69 % o más desde 2 meses de atraso | Conservarlas numéricas y ordenadas; probar una variable «atraso ≥ 2» en features | Es la señal más fuerte y el orden respeta el aumento del riesgo |
-| 5 | 1.930 clientes (6,43 %) con `BILL_AMT` negativo; `PAY_AMT2` va de p99 = 76.651 a máximo = 1.684.259 | No aplicar `log(x)`; comparar `log1p` o Yeo-Johnson dentro del pipeline | Hay negativos y ceros; solo se acepta si mejora por validación cruzada |
-| 6 | Mujeres incumplen 20,8 % y hombres 24,2 %; `AGE` y `MARRIAGE` también separan grupos | Revisar errores por grupo y probar con y sin `SEX` | Atributos sensibles: el modelo no debe discriminar |
-| 7 | `PAY_0` es la más correlacionada con el objetivo (0,33) | Medir el modelo con y sin `PAY_0` | Que no dependa de una sola columna |
-| 8 | 35 filas idénticas ignorando `ID`; 3.931 clientes facturan por encima del límite | No borrar filas | Parecen clientes reales distintos |
-| 9 | `n_atraso` (meses con atraso) tiene correlación 0,40 con el objetivo, mayor que `PAY_0` (0,33); va de 11,7 % a 70,3 % | Crear `n_atraso` en la etapa de variables | Resume el historial de 6 meses en un número |
-| 10 | Las 6 facturas `BILL_AMT` tienen correlación media 0,89; `ratio_pago` (−0,01) y `tendencia` (−0,03) casi no se relacionan con el objetivo | Resumir o regularizar las facturas; probar las nuevas sin esperar grandes mejoras | Redundancia confunde a la logística; sin señal lineal en las nuevas |
-| 11 | La regla `PAY_0 >= 2` cuesta 0,775 (≈ «marcar a todos» 0,779); el modelo de referencia, 0,57 | Seguir con un modelo | El modelo ahorra cerca de un 27 % de costo sobre la mejor estrategia sin modelo |
-| 12 | LightGBM 0,7813 y HistGradientBoosting 0,7806 empatan; XGBoost por defecto 0,7668; regresión logística 0,7272 | Gradient boosting como principal y regresión logística como contraste explicable | Mejor ROC AUC; la logística permite explicar |
-| 13 | Calibración buena (predicho 0,568 frente a real 0,567 en el quintil más alto) | Usar probabilidades para el umbral de costos; confirmar con el modelo final | El umbral depende de que «30 %» signifique 30 % |
-| 14 | De 14.400 a 19.200 filas el ROC AUC sube solo 0,0009 | Invertir en variables, no en más datos | La curva ya se aplanó |
+| 1 | 30.000 ID distintos, uno por fila | Conservar partición original 80/20, estratificada, semilla 42; excluir ID | Evita solapamiento de ID; no elimina la exposición previa de la prueba |
+| 2 | 22,12 % incumple; siempre paga: exactitud 77,88 %, recall 0 % | Mantener ROC AUC, recall y AUC-PR; evaluar penalización relativa y carga de revisión | La exactitud aislada no refleja detección ni la hipótesis económica 5 a 1 |
+| 3 | EDUCATION 0, 5 y 6: 345 clientes (1,15 %); MARRIAGE 0: 54 | Conservar agrupación fija en otros (4 y 3), previa a codificación; garantizar igual regla en entrenamiento e inferencia | Es una convención documentada, no identidad semántica demostrada; revisar integración en pipeline en fase posterior |
+| 4 | PAY_0: estados -2, -1 y 0, aproximadamente 13–17 %; código 2, 69,1 %; código 5, 50,0 % | Mantener codificación numérica como referencia provisional y comparar alternativas en validación | Mezcla estados y meses; asociación no causal ni estrictamente creciente; documentar códigos |
+| 5 | 1.930 clientes (6,43 %) con BILL_AMT negativo; PAY_AMT2: p99 76.651, máximo 1.684.259 | Conservar negativos plausibles; log1p solo en columnas compatibles; comparar Yeo-Johnson dentro del pipeline | log y log1p no resuelven todos los negativos; cualquier ajuste se aprende dentro de entrenamiento |
+| 6 | Mujeres: tasa 20,8 %, recall regla 32,9 %; hombres: 24,2 % y 32,7 % | Probar con y sin SEX y auditar grupos de sexo, edad y matrimonio | Recall similar no demuestra equidad; faltan otras métricas e incertidumbre |
+| 7 | PAY_0: correlación 0,33 con el objetivo | Comparar modelo con y sin PAY_0, verificando disponibilidad al decidir | Mide sensibilidad predictiva; no prueba causalidad ni ausencia de fuga |
+| 8 | 35 filas idénticas sin ID; 3.931 clientes exceden su límite | Conservar filas sin borrado automático; documentar plausibilidad | ID distintos y coincidencias no prueban errores ni garantizan independencia real entre personas |
+| 9 | n_atraso: correlación 0,40 frente a PAY_0 0,33; tasas 11,7 % a 70,3 % | Conservar como candidata y medir mejora incremental en validación | Asociación exploratoria no demuestra causalidad ni ganancia predictiva adicional |
+| 10 | Facturas: correlación media 0,89; ratio_pago −0,01 y tendencia −0,03 con el objetivo | Comparar resúmenes o regularización y las candidatas; definir vacíos y extremos del ratio | Correlación lineal no determina utilidad no lineal ni obliga a eliminar variables |
+| 11 | Regla: penalización 0,775; marcar a todos: 0,779; referencia exploratoria del modelo: 0,57 | Comparar alternativas sobre las mismas observaciones de validación y con la misma matriz | No demuestra ahorro cercano al 27 % ni impacto económico; referencia del modelo pendiente de trazabilidad |
+| 12 | LightGBM 0,7813; HistGradientBoosting 0,7806; XGBoost 0,7668; logística 0,7272 | Conservar boosting y logística como candidatos, sin ganador definitivo | Son promedios exploratorios; faltan comparación pareada y selección comparable |
+| 13 | HistGradientBoosting: quintil superior predicho 0,568 y observado 0,567 | Verificar calibración del modelo concreto cerca del umbral; seleccionar umbral solo con validación | Evidencia agregada preliminar no garantiza calibración cerca del umbral teórico 1/6 ≈ 0,167 |
+| 14 | De 14.400 a 19.200 filas: aumento AUC 0,0009 | Mantener abiertas hipótesis de más datos y mejores variables | Sin variabilidad ni repetición no se puede afirmar saturación ni mejora garantizada |
 
 ## Unidad de análisis y partición
 
-Cada fila es un cliente distinto (30.000 `ID` únicos), así que **partir por fila es válido**: es imposible que un cliente quede en entrenamiento y en prueba. Se estratifica por el objetivo (22,12 % incumple) con 80 % entrenamiento (24.000) y 20 % prueba (6.000), semilla 42. `tests/test_split.py` lo verifica y falla si se quita la estratificación. Implementación: `src/proyecto/data/split.py`.
+Cada fila es un cliente distinto (30.000 `ID` únicos), así que **partir por fila es válido**: ningún ID queda en ambas particiones si se cumplen las comprobaciones; la unicidad del identificador no demuestra por sí sola independencia real entre personas ni generalización temporal. Se estratifica por el objetivo (22,12 % incumple) con 80 % entrenamiento (24.000) y 20 % prueba (6.000), semilla 42. `tests/test_split.py` contiene comprobaciones de partición y estratificación; no se ejecutaron en esta revisión documental. Implementación: `src/proyecto/data/split.py`.
 
 ## Qué queda abierto
 
-- La proporción de costos 5 a 1 es un supuesto por validar; de ella depende el umbral.
+- Contrastar la hipótesis económica 5 a 1. El umbral teórico 1/6 ≈ 0,167 depende de probabilidades calibradas y de la matriz asumida, sin otros costos o restricciones. El umbral posterior se seleccionará exclusivamente mediante validación dentro del entrenamiento original.
 - La comparación oficial de modelos (con optimización de cada candidato) se hace en `05_torneo.ipynb`.
 - Medir el modelo con y sin `PAY_0` y con y sin `SEX` (etapa 4).
+- Documentar el significado de los códigos de pago y comparar sus codificaciones; no asumir que el orden numérico implica riesgo estrictamente creciente.
+- Revisar posteriormente la integración de limpieza fija, imputación, codificación y transformaciones en el pipeline, conservando el tratamiento justificado de negativos y filas. log1p solo admite valores mayores que -1; Yeo-Johnson es una candidata para montos con negativos.
+- Recalcular comparaciones homogéneas solo en una fase autorizada. La prueba original se reportará como complementaria; cambiar la semilla no proporciona datos independientes.
