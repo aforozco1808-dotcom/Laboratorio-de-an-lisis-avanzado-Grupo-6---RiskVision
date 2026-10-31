@@ -32,9 +32,16 @@
 - [x] T301 `reports/05_torneo.md` con las tablas, los finalistas y lo descartado.
 - [x] T302 `pytest` en verde y `git status` sin cambios en `data/raw/` ni en `test.joblib`.
 - [x] T303a Auditoría de fuga de la primera versión (sin fuga; correcciones aplicadas).
-- [ ] T303b Nueva pasada de `auditor-de-fuga` y `revisor-de-codigo-ia` sobre la ampliación.
+- [x] T303b Segunda pasada de `auditor-de-fuga` (sin fuga) y `revisor-de-codigo-ia` (dos fallos con empates corregidos y lógica movida a `src/`).
 - [ ] T304 Commit y push.
 
 ## Dependencias
 T001 → T002 → Fase 1 → Fase 2 → Fase 3.
 Esta versión se escribió y ejecutó antes de la aprobación de T001/T002. Además de lo previsto, se agregó la comparación de LightGBM con paquete D frente a E en pliegues nuevos y la del boosting frente a la logística (sección 6.1 del notebook); si el grupo cambia los candidatos o la regla, se repite la Fase 2.
+
+## Fase 5 · Modularización (2026-10-31)
+- [x] T501 Corregir empates en `_top_share` y `calibration_table` y unificar la penalización (con pruebas y mutaciones que las hacen fallar).
+- [x] T502 `models/candidates.py`, `features/variants.py`, `models/comparison.py` y `models/tournament.py`, con pruebas.
+- [x] T503 Notebooks 04 y 05 solo importan y muestran; el 04 sale idéntico y el 05 solo cambia lo que dependía de los empates.
+- [ ] T504 (opcional) Dividir `evaluate.py` en `folds`, `metrics`, `calibration` y `selection`, y mover los validadores de `data/` a `data/validation.py`.
+- [x] T505 Tercera pasada de `auditor-de-fuga` y `revisor-de-codigo-ia` sobre la modularización: sin fuga; se corrigió la calibración con valores repetidos en el borde y se reforzaron las pruebas.

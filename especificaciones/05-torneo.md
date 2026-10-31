@@ -29,7 +29,7 @@ Sin pesos de clase en ningún modelo: el desbalance se trata con el umbral y las
 - **Decide quién avanza: ROC AUC** (ficha del caso, `reports/00_caso.md`).
 - **Control, con probabilidades:** AUC-PR, log loss, Brier y tasa predicha media.
 - **Control, con la decisión «marcar si proba ≥ 1/6»:** exactitud balanceada, F1 macro, precisión y recall por clase, % marcado y penalización relativa 5:1. El 5:1 es una **hipótesis del grupo, no un costo observado**, y el umbral 1/6 solo es óptimo con probabilidades calibradas.
-- **Control independiente de la calibración:** recall y lift al revisar el 20 % de mayor riesgo (escenario supuesto, no una capacidad medida).
+- **Control independiente de la calibración:** recall y lift al revisar el 20 % de mayor riesgo (escenario supuesto, no una capacidad medida). La sección 7 documenta la ampliación posterior: también el 5 % y el 10 %, la penalización con 2 a 1 y 10 a 1, y la calibración por tramos.
 
 ## 4. Regla para elegir finalistas (escrita antes de ver los resultados)
 Se eligen **1 o 2** mirando, en este orden:
@@ -45,6 +45,9 @@ Un empate práctico (gana en menos de 12 de 15 pliegues o diferencia pareada ≤
 | Pieza | Ruta |
 |---|---|
 | Métricas técnicas y medición detallada | `src/proyecto/models/evaluate.py` (`technical_metrics`, `score_folds_detailed`) |
+| Modelos candidatos y sus parámetros | `src/proyecto/models/candidates.py` (`tournament_candidates`, `reference_models`) y `tests/test_candidates.py` |
+| Tablas de comparación y del torneo | `src/proyecto/models/comparison.py`, `src/proyecto/models/tournament.py`, `src/proyecto/features/variants.py` y sus pruebas `tests/test_comparison.py`, `tests/test_tournament.py` |
+| Regla base `PAY_0 ≥ 2` | `src/proyecto/models/baselines.py` |
 | Pipeline | `src/proyecto/models/train.py` (`build_pipeline`) |
 | Pruebas | `tests/test_evaluate.py` (valores calculados a mano) |
 | Notebook que orquesta | `notebooks/05_torneo.ipynb` |
@@ -67,3 +70,5 @@ Un empate práctico (gana en menos de 12 de 15 pliegues o diferencia pareada ≤
 - **Ampliación elegida por el grupo después de ver los resultados (2026-10-31).** Se agregaron: (1) sensibilidad a la hipótesis 5 a 1 (2:1, 5:1 y 10:1, cada una con su umbral teórico) y a la capacidad de revisión (5 %, 10 % y 20 %); (2) la regla `PAY_0 ≥ 2` como tercera línea base; (3) calibración por tramos y una variante calibrada de LightGBM. Ninguna cambia las reglas de elegir finalistas de la sección 4; sirven para comprobar que la elección no depende de un solo supuesto. Como se decidieron después de ver el primer resultado, no son pruebas ciegas.
 - **Límites que siguen abiertos.** La calibración se midió en conjunto y por 10 tramos, no por subgrupos; no se evaluó equidad por grupo; los parámetros no están afinados.
 - **Comparación con el notebook de selección de modelo (2026-10-31).** A pedido del grupo se comparó ese notebook con este torneo en los mismos pliegues y se hizo una afinación exploratoria de LightGBM y una mezcla con la logística. Resultado y límites en `reports/05_torneo.md`. Los scripts son exploratorios y no están en el repositorio; la afinación formal queda para la etapa 6.
+- **Segunda pasada de revisión (2026-10-31).** La auditoría de fuga no halló fuga en la ampliación. La revisión de código halló dos fallos con empates de probabilidad (capacidad de revisión y tramos de calibración), que dependían del orden de las filas; se corrigieron (valor esperado en los empates y tramos por valor), y también la cuenta de penalización repetida. Cambiaron las cifras de captura al revisar y de *lift* en las líneas base, la regla `PAY_0 ≥ 2` y el LightGBM calibrado (por ejemplo, la regla pasó de 40,2 % a 40,0 % al revisar el 20 %); AUC, penalizaciones y calibración no cambiaron. La lógica reutilizable de los notebooks 04 y 05 se movió a `src/proyecto/` (`models/candidates.py`, `models/comparison.py`, `models/tournament.py` y `features/variants.py`).
+- **Tercera pasada de revisión (2026-10-31).** Sin fuga. Se corrigió que `calibration_table` pudiera fundir dos tramos distintos cuando un valor repetido caía justo en el borde, y se reforzaron las pruebas (dirección de las comparaciones, variables que recibe cada variante, pliegues de cada semilla, nombres de las líneas base). La calibración, el AUC y las penalizaciones no cambiaron. Puntos conocidos que quedan: el rango 12–22 % de la «zona del umbral» está escrito a mano, `evaluate.py` sigue siendo largo (T504) y el CSV conserva valores sin sentido para las reglas 0/1.

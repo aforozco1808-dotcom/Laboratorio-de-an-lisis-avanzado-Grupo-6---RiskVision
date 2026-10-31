@@ -15,14 +15,14 @@ Media ± desviación entre pliegues, ordenada por ROC AUC.
 
 | Modelo | ROC AUC (± entre pliegues) | Penalización 5:1 | Segundos por ajuste |
 |---|---|---|---|
-| LightGBM + paquete D | 0,7885 ± 0,0060 | 0,541 | 0,25 |
+| LightGBM + paquete D | 0,7885 ± 0,0060 | 0,541 | 0,26 |
 | LightGBM calibrado | 0,7877 ± 0,0064 | 0,543 | 0,68 |
-| XGBoost | 0,7872 ± 0,0063 | 0,549 | 0,43 |
-| LightGBM | 0,7870 ± 0,0063 | 0,546 | 0,24 |
-| bosque aleatorio | 0,7868 ± 0,0057 | 0,548 | 1,66 |
-| regresión logística | 0,7785 ± 0,0059 | 0,554 | 0,15 |
+| XGBoost | 0,7872 ± 0,0063 | 0,549 | 0,44 |
+| LightGBM | 0,7870 ± 0,0063 | 0,546 | 0,26 |
+| bosque aleatorio | 0,7868 ± 0,0057 | 0,548 | 1,72 |
+| regresión logística | 0,7785 ± 0,0059 | 0,554 | 0,16 |
 | línea base: regla PAY_0 ≥ 2 | 0,6435 ± 0,0058 | 0,775 | 0,00 |
-| línea base: prior | 0,5000 ± 0,0000 | 0,779 | 0,03 |
+| línea base: prior | 0,5000 ± 0,0000 | 0,779 | 0,04 |
 | línea base: siempre paga | 0,5000 ± 0,0000 | 1,106 | 0,03 |
 
 ## Métricas técnicas
@@ -39,6 +39,8 @@ Media entre pliegues. Las de decisión usan «marcar si la probabilidad ≥ 1/6�
 | línea base: regla PAY_0 ≥ 2 | 0,643 | 0,377 | 0,643 | 0,669 | 0,697 | 0,960 | 0,327 | 0,104 | — | — | — |
 | línea base: prior | 0,500 | 0,221 | 0,500 | 0,181 | 0,221 | 0,000 | 1,000 | 1,000 | 0,528 | 0,172 | 0,221 |
 | línea base: siempre paga | 0,500 | 0,221 | 0,500 | 0,438 | 0,000 | 1,000 | 0,000 | 0,000 | — | — | — |
+
+**Sobre el CSV por pliegue.** `reports/05_torneo_por_pliegue.csv` conserva log loss, Brier y probabilidad media también para las reglas que dan solo 0 o 1 («siempre paga» y `PAY_0 ≥ 2`); esos valores no tienen sentido y por eso las tablas los ocultan.
 
 ## Sensibilidad a los supuestos
 **Cuánto pesa no detectar a quien incumple** (penalización por cliente, menor es mejor; cada escenario con su umbral teórico):
@@ -60,14 +62,14 @@ Media entre pliegues. Las de decisión usan «marcar si la probabilidad ≥ 1/6�
 | Modelo | Captura al revisar 5 % | Captura al revisar 10 % | Captura al revisar 20 % | Lift 20 % |
 |---|---|---|---|---|
 | LightGBM + paquete D | 0,172 | 0,319 | 0,516 | 2,58 |
-| LightGBM calibrado | 0,171 | 0,320 | 0,517 | 2,58 |
+| LightGBM calibrado | 0,171 | 0,320 | 0,517 | 2,59 |
 | XGBoost | 0,172 | 0,320 | 0,518 | 2,59 |
 | LightGBM | 0,171 | 0,319 | 0,516 | 2,58 |
 | bosque aleatorio | 0,170 | 0,319 | 0,516 | 2,58 |
 | regresión logística | 0,170 | 0,317 | 0,510 | 2,55 |
-| línea base: regla PAY_0 ≥ 2 | 0,158 | 0,314 | 0,402 | 2,01 |
-| línea base: prior | 0,052 | 0,100 | 0,197 | 0,99 |
-| línea base: siempre paga | 0,052 | 0,100 | 0,197 | 0,99 |
+| línea base: regla PAY_0 ≥ 2 | 0,158 | 0,315 | 0,400 | 2,00 |
+| línea base: prior | 0,050 | 0,100 | 0,200 | 1,00 |
+| línea base: siempre paga | 0,050 | 0,100 | 0,200 | 1,00 |
 
 - **Los árboles apenas cambian entre escenarios:** el mejor es LightGBM calibrado o la variante D con 2 a 1, la variante D con 5 a 1 y la variante D con el bosque con 10 a 1, siempre con diferencias de 0,001 a 0,008 entre ellos.
 - **La logística pierde más cuanto más cuesta no detectar:** su diferencia con el mejor es de 0,005 con 2 a 1, 0,013 con 5 a 1 y 0,028 con 10 a 1.
@@ -75,14 +77,14 @@ Media entre pliegues. Las de decisión usan «marcar si la probabilidad ≥ 1/6�
 
 ## Los modelos frente a la regla simple `PAY_0 ≥ 2`
 La regla marca al 10,4 % de los clientes, con AUC 0,643, precisión 0,697 y recall 0,327. Su penalización 5:1 (0,775) es casi igual a marcar a todos (0,779).
-- **Los modelos la superan con claridad:** AUC 0,787 frente a 0,643; penalización 0,54–0,55 frente a 0,775; y al revisar el 20 %, 51–52 % de incumplidores capturados frente a 40,2 %.
-- **Pero en los primeros tramos casi no pierde:** al revisar el 5 % o el 10 %, la regla captura 15,8 % y 31,4 %, y los modelos 17,0–17,2 % y 31,7–32,0 %. El valor del modelo está en ordenar bien al resto de los clientes.
-- **Advertencia:** la regla da 0 o 1, así que sus empates se desempatan por posición; su cifra al 20 % depende en parte del orden de las filas.
+- **Los modelos la superan con claridad:** AUC 0,787 frente a 0,643; penalización 0,54–0,55 frente a 0,775; y al revisar el 20 %, 51–52 % de incumplidores capturados frente a 40,0 %.
+- **Pero en los primeros tramos casi no pierde:** al revisar el 5 % o el 10 %, la regla captura 15,8 % y 31,5 %, y los modelos 17,0–17,2 % y 31,7–32,0 %. El valor del modelo está en ordenar bien al resto de los clientes.
+- **Empates:** la regla da 0 o 1, así que muchos clientes tienen la misma probabilidad. En el corte de capacidad se reparte el cupo por valor esperado (cada cliente empatado aporta la fracción que le toca), por lo que la cifra no depende del orden de las filas.
 
 ## Calibración por tramos
-Predicciones de los 15 pliegues juntas, 10 grupos de igual tamaño según la probabilidad predicha. «Error de calibración» es la diferencia media entre lo predicho y lo observado (0 = perfecta). La zona del umbral es probabilidad entre 12 % y 22 %.
+Predicciones de los 15 pliegues juntas (cada cliente aparece 3 veces, una por repetición, y esas copias no son independientes), en hasta 10 grupos según la probabilidad predicha; clientes con la misma probabilidad quedan siempre juntos. «Error de calibración» es la diferencia media entre lo predicho y lo observado (0 = perfecta). La zona del umbral es probabilidad entre 12 % y 22 %.
 
-| Modelo | Error de calibración | Clientes con prob. 12–22 % | Prob. predicha ahí | Tasa observada ahí |
+| Modelo | Error de calibración | Predicciones con prob. 12–22 % | Prob. predicha ahí | Tasa observada ahí |
 |---|---|---|---|---|
 | LightGBM | 0,0038 | 21.800 | 0,162 | 0,161 |
 | LightGBM calibrado | 0,0038 | 23.896 | 0,165 | 0,164 |
@@ -91,9 +93,9 @@ Predicciones de los 15 pliegues juntas, 10 grupos de igual tamaño según la pro
 | bosque aleatorio | 0,0092 | 24.361 | 0,164 | 0,158 |
 | regresión logística | 0,0101 | 23.558 | 0,157 | 0,169 |
 
-- **LightGBM es el mejor calibrado** y en la zona del umbral predice 16,2 % y se observa 16,1 %. Eso respalda usar 1/6 con este modelo.
+- **LightGBM está entre los mejor calibrados** (empatado con su versión calibrada y muy cerca de la variante D y de XGBoost; las diferencias de 0,0003 a 0,0015 no se distinguen del ruido). En la zona del umbral predice 16,2 % y se observa 16,1 %, aunque dentro de esa zona hay tramos que se compensan (por ejemplo, 19,9 % predicho y 18,3 % observado en el 7.º tramo). Eso no contradice usar 1/6 con este modelo.
 - **La logística subestima el riesgo ahí** (15,7 % predicho frente a 16,9 % observado) y **el bosque lo sobrestima** (16,4 % frente a 15,8 %).
-- **Calibrar LightGBM con regresión isotónica no mejora nada:** mismo error de calibración, tres veces más lento. La calibración se revisó en promedio y por 10 tramos; no se hizo por subgrupos (sexo, edad).
+- **Calibrar LightGBM con regresión isotónica no mejora nada:** mismo error de calibración, tres veces más lento. La versión calibrada es un promedio de 3 modelos entrenados con dos tercios de los datos, así que su diferencia mezcla calibrar y promediar. La calibración se revisó en promedio y por 10 tramos; no se hizo por subgrupos (sexo, edad).
 
 ## ¿Coinciden los rankings?
 - Entre los modelos, por **AUC** lidera LightGBM con el paquete D; por **AUC-PR** y por **recall al revisar el 20 %**, XGBoost; por **F1 macro**, la regresión logística. Las diferencias entre los modelos de árboles son mínimas (AUC de 0,7868 a 0,7885, con ±0,006 entre pliegues): es un empate práctico.
@@ -126,17 +128,17 @@ Por cada 1.000 clientes (unos 221 incumplen), con el umbral 1/6. No se estima un
 | LightGBM | 434 | 166 | 55 | 268 | 546 | 114 |
 | bosque aleatorio | 467 | 171 | 50 | 296 | 548 | 114 |
 | regresión logística | 395 | 158 | 63 | 237 | 554 | 113 |
-| línea base: regla PAY_0 ≥ 2 | 104 | 72 | 149 | 32 | 775 | 89 |
+| línea base: regla PAY_0 ≥ 2 | 104 | 72 | 149 | 32 | 775 | 88 |
 | línea base: prior | 1000 | 221 | 0 | 779 | 779 | 44 |
 | línea base: siempre paga | 0 | 0 | 221 | 0 | 1106 | 44 |
 
 - **Frente a marcar a todos** (penalización 779 por cada 1.000), los modelos bajan a 541–554, revisando 40–47 % de los clientes en vez de todos.
 - **Entre el mejor y la logística:** 13 puntos de penalización por cada 1.000 clientes con 5 a 1 (541 frente a 554) y 1 incumplidor menos capturado al revisar el 20 % (113 frente a 114).
 - **Redondeo:** los conteos por cada 1.000 clientes están redondeados y pueden diferir en 1 entre el notebook y esta tabla.
-- **Líneas base:** en «siempre paga» y «prior» todas las probabilidades son iguales, así que el desempate para elegir el 20 % es arbitrario; sus 44 «detectados al revisar el 20 %» son un artefacto, y por azar se esperan unos 44 (20 % de 221) con lift 1,0.
+- **Líneas base:** en «siempre paga» y «prior» todas las probabilidades son iguales, así que el cálculo da exactamente lo esperado por azar: 44 de 221 (20 %), con lift 1,0.
 
 ## Quién ganó y finalistas
-**Gana LightGBM con el paquete E, por desempate y no por tener el AUC más alto.** El AUC no separa a los modelos de árboles (ninguna pareja es consistente: XGBoost gana a LightGBM en 8 de 15 pliegues con diferencia pareada 0,15, y LightGBM al bosque en 8 de 15 con 0,07), así que decide el criterio siguiente de la especificación: calibración, tiempo y simplicidad. LightGBM es el mejor calibrado, ajusta en 0,25 s (XGBoost 0,43; calibrado 0,69; bosque 1,7) y usa solo 5 variables nuevas.
+**Gana LightGBM con el paquete E, por desempate y no por tener el AUC más alto.** El AUC no separa a los modelos de árboles (ninguna pareja es consistente: XGBoost gana a LightGBM en 8 de 15 pliegues con diferencia pareada 0,15, y LightGBM al bosque en 8 de 15 con 0,07), así que decide el criterio siguiente de la especificación: calibración, tiempo y simplicidad. LightGBM está entre los mejor calibrados, ajusta en 0,26 s (XGBoost 0,44; calibrado 0,68; bosque 1,7) y usa solo 5 variables nuevas.
 
 | Finalista | Por qué (consistencia, métrica, tiempo, interpretabilidad) | Qué podría cambiar con la optimización |
 |---|---|---|
@@ -169,7 +171,7 @@ Por cada 1.000 clientes (unos 221 incumplen), con el umbral 1/6. No se estima un
 | Afinación | Optuna, 30 pruebas, solo Gradient Boosting | No afinado todavía |
 | Reproducibilidad | Ruta local fija e instalación de paquetes dentro del notebook | Rutas del proyecto y entorno del repositorio |
 
-**Lo que se midió en los mismos 15 pliegues**
+**Lo que se midió en los mismos 15 pliegues** (cifras de scripts exploratorios, no reproducibles desde el repositorio)
 
 | Modelo | AUC (± entre pliegues) | Segundos por ajuste |
 |---|---|---|
@@ -178,7 +180,7 @@ Por cada 1.000 clientes (unos 221 incumplen), con el umbral 1/6. No se estima un
 | Regresión logística con `PAY_*` como número (original) | 0,7273 ± 0,0101 | 0,05 |
 | Regresión logística con `PAY_*` como estados, sin variables nuevas | 0,7697 ± 0,0060 | 0,12 |
 | LightGBM sin variables nuevas | 0,7853 ± 0,0071 | 0,21 |
-| LightGBM con el paquete E (este torneo) | 0,7870 | 0,25 |
+| LightGBM con el paquete E (este torneo) | 0,7870 | 0,26 |
 | LightGBM con el paquete D (este torneo) | 0,7885 | 0,26 |
 | Regresión logística con el paquete E (este torneo) | 0,7785 | 0,16 |
 
@@ -192,14 +194,14 @@ Por cada 1.000 clientes (unos 221 incumplen), con el umbral 1/6. No se estima un
 | GB optimizado original frente a nuestra logística | +0,0058 | 14 de 15 | 2,29 |
 
 **Qué se valida y qué no**
-- **Bien hecho:** parte los datos antes de preprocesar, mete el preprocesamiento en el `Pipeline`, fijó la regla de selección antes de ver resultados y usó la prueba una sola vez (0,7784).
+- **Bien hecho:** parte los datos antes de preprocesar, mete el preprocesamiento en el `Pipeline` y fijó la regla de selección antes de ver resultados.
 - **La conclusión sobre la regresión logística es un artefacto.** Tratar `PAY_*` como números da 0,727; como estados sube a 0,770 (+0,042, en los 15 pliegues). Con las variables nuevas llega a 0,7785, a solo unas milésimas del boosting. Los textos que citan «logística 0,73» (notebooks 01 y 02, `especificacion-proyecto.md`) vienen de ese resultado.
-- **El 0,7850 del tuning es optimista:** es el mejor de 30 pruebas sobre los mismos pliegues. En los pliegues de este torneo, ese mismo modelo da 0,7843. Su prueba (0,7784) está 0,0066 por debajo.
+- **El 0,7850 del tuning es optimista:** es el mejor de 30 pruebas sobre los mismos pliegues. En los pliegues de este torneo, ese mismo modelo da 0,7843. (Ese notebook cita 0,7784 en la prueba; es una cifra citada, no verificada aquí, y esa prueba ya no es independiente, así que no se usa como argumento.)
 - **El tuning aportó poco:** +0,0027 de AUC, con diferencia pareada de 1,2.
 - **Cobertura limitada:** sin bosque, LightGBM ni XGBoost, y solo uno de los modelos se optimizó.
-- **Nuestro LightGBM, sin afinar, iguala o supera a su Gradient Boosting afinado** y ajusta unas 50 veces más rápido. La ventaja consistente viene de las variables nuevas.
+- **Nuestro LightGBM, sin afinar, iguala o supera a su Gradient Boosting afinado** y ajusta unas 50 veces más rápido. La ventaja parece venir de las variables nuevas, pero esas variables se eligieron en estos mismos pliegues, por lo que puede estar algo inflada.
 
-**Afinación exploratoria de LightGBM (paquete E)**
+**Afinación exploratoria de LightGBM (paquete E)** (script exploratorio, no reproducible desde el repositorio)
 Optuna, 60 pruebas en 160 s, buscando en pliegues de semilla 123 y evaluando en pliegues que la búsqueda no vio. Los 24.000 clientes son los mismos, así que reduce el sesgo de selección pero no lo elimina.
 
 | Semilla de evaluación | AUC original | AUC afinado | Mejora | Pliegues | Diferencia pareada |
@@ -210,7 +212,7 @@ Optuna, 60 pruebas en 160 s, buscando en pliegues de semilla 123 y evaluando en 
 
 - **La mejora (≈ +0,001) no es consistente:** la diferencia pareada no llega a 1 y la penalización 5:1 casi no cambia (0,5456 a 0,5433 en la semilla 42).
 - **Parámetros encontrados (punto de partida para la etapa 6, no definitivos):** `learning_rate=0.014`, `n_estimators=388`, `num_leaves=26`, `min_child_samples=91`, `subsample=0.53`, `colsample_bytree=0.89`, `reg_lambda=8.96`, `reg_alpha=0.06`. Ninguno quedó en el borde del rango de búsqueda.
-- **Mezclar LightGBM afinado (80 %) con la logística (20 %)** sube el AUC solo +0,0005 a +0,0007 (diferencia pareada de 0,66 a 1,20); con 50/50 empeora. No justifica la complejidad.
+- **Mezclar LightGBM afinado (80 %) con la logística (20 %)** sube el AUC solo +0,0005 a +0,0007 (diferencia pareada de 0,66 a 1,20); con 50/50 empeora. Solo se probaron esos dos pesos, sin validación previa. No justifica la complejidad.
 - **Lectura:** con estos datos y variables el techo parece estar cerca de 0,789 de AUC. Los avances más probables están en la decisión (umbral, calibración de la logística) y no en el AUC.
 
 ## Efectos que la métrica principal no ve
